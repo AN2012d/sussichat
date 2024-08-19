@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sussitext</title>
+  <style>
+    .messages {
+      list-style-type: none;
+      padding: 10px;
+      margin: 0;
+      flex: 1;
+      overflow-y: auto;
+      background-color: #fff;
+      border-bottom: 1px solid #ccc;
+    }
+
+    .messages li {
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      max-width: 80%;
+      word-wrap: break-word;
+      font-family: 'Arial', sans-serif;
+      font-size: 16px;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .messages .sent {
+      background-color: #e1f7d5;
+      align-self: flex-end;
+    }
+
+    .messages .received {
+      background-color: #d0e7ff;
+      align-self: flex-start;
+    }
+
+    .deleteButton {
+      position: absolute;
+      top: 50%;
+      right: -30px;
+      transform: translateY(-50%);
+      background-color: #FF6347;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 2px 5px;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+    }
+
+    .messages .sent:hover .deleteButton {
+      display: inline-block;
+    }
+
+    .messageInput {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: calc(100% - 70px);
+      box-sizing: border-box;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    .sendButton {
+      padding: 10px 20px;
+      margin-left: 5px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .sendButton:hover {
+      background-color: #45a049;
+    }
+
+    .messageInput, .sendButton {
+      margin: 10px;
+    }
+
+    input:focus, button:focus {
+      outline: none;
+    }
+
+    #login-container {
+      margin-bottom: 20px;
+    }
+
+    #user-info {
+      display: flex;
+      align-items: center;
+    }
+
+    #user-info img {
+      margin-left: 5px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .reply-box {
+      margin: 10px;
+      padding: 5px;
+      background-color: #f1f1f1;
+      border-left: 5px solid #4CAF50;
+      display: none;
+    }
+
+    .reply-box span {
+      font-weight: bold;
+    }
+
+    .close-reply {
+      margin-left: 10px;
+      cursor: pointer;
+      color: #FF0000;
+    }
+  </style>
+</head>
+<body>
+  <div id="login-container" class="container">
+    <h2>Login</h2>
+    <input type="text" id="usernameInput" placeholder="Username">
+    <button onclick="login()">Login</button>
+  </div>
+  <div id="app-container" class="container hidden">
+    <div id="user-info">
+      <span id="user-name"></span> 
+      <img src="https://www.freeiconspng.com/uploads/green-circle-icon-14.png" alt="Online Logo" width="15px">
+      <span id="logged-in-text" class="hidden">Logged in</span>
+    </div>
+    <div id="replyBox" class="reply-box">
+      <span id="replyToUser"></span>: <span id="replyToMessage"></span>
+      <span class="close-reply" onclick="cancelReply()">x</span>
+    </div>
+    <ul id="messages" class="messages"></ul>
+    <input id="messageInput" autocomplete="off" class="messageInput" />
+    <button id="sendButton" class="sendButton">Send</button>
+    <!-- Audio element for notification sound -->
+    <audio id="notificationSound" src="notification.mp3" preload="auto"></audio>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.2.0/socket.io.js"></script>
+  <script>
+const socket = io();
+const loginContainer = document.getElementById('login-container');
+const appContainer = document.getElementById('app-container');
+const userInfo = document.getElementById('user-info');
+const usernameInput = document.getElementById('usernameInput');
+const messages = document.getElementById('messages');
+const messageInput = document.getElementById('messageInput');
+const sendButton = document.getElementById('sendButton');
+const replyBox = document.getElementById('replyBox');
+const replyToUser = document.getElementById('replyToUser');
+const replyToMessage = document.getElementById('replyToMessage');
+const notificationSound = document.getElementById('notificationSound');
+let username = '';
+let replyTo = null;
+
+function login() {
+  username = usernameInput.value.trim();
+  if (username !== '') {
+    document.getElementById('user-name').textContent = username;
+    document.getElementById('logged-in-text').classList.remove('hidden');
+    loginContainer.classList.add('hidden');
+    appContainer.classList.remove('hidden');
+    socket.emit('login', username); // Emit login event
+  } else {
+    alert('Please enter a username.');
+  }
+}
+
+function sendMessage() {
+  const message = messageInput.value.trim();
+  if (message !== '') {
+    socket.emit('chat message', { username, message, replyTo });
+    messageInput.value = '';
+    addMessageToList(username, message, true, replyTo);
+    cancelReply(); // Reset replyTo after sending
+  }
+}
+
+function addMessageToList(username, message, isSent, replyTo = null) {
+  const item = document.createElement('li');
+  if (replyTo) {
+    item.innerHTML = `<span style="font-weight: bold;">Replying to ${replyTo.user}:</span> ${replyTo.message}<br>`;
+  }
+  item.innerHTML += `${username}: ${message}`;
+
+  if (isSent) {
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'deleteButton';
+    deleteButton.textContent = 'Delete';
+    deleteButton.onclick = () => deleteMessage(item);
+    item.appendChild(deleteButton);
+    item.className = 'sent';
+  } else {
+    item.className = 'received';
+  }
+
+  item.onclick = () => handleReplyClick(username, message);
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight; // Scroll to the bottom
+}
+
+function addSystemMessage(message) {
+  const item = document.createElement('li');
+  item.textContent = message;
+  item.style.fontStyle = 'italic';
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight; // Scroll to the bottom
+}
+
+function deleteMessage(item) {
+  item.remove(); // Remove the message from the DOM
+  // Emit a delete event to the server if needed
+}
+
+function handleReplyClick(user, message) {
+  replyTo = { user, message };
+  replyToUser.textContent = user;
+  replyToMessage.textContent = message;
+  replyBox.style.display = 'block';
+}
+
+function cancelReply() {
+  replyTo = null;
+  replyBox.style.display = 'none';
+}
+
+sendButton.addEventListener('click', sendMessage);
+
+document.addEventListener('keypress', (event) => {
+  if (event.key === 'Enter') {
+    sendMessage();
+  }
+});
+
+socket.on('chat message', (data) => {
+  if (data.username !== username) {
+    addMessageToList(data.username, data.message, false, data.replyTo);
+    notificationSound.play(); // Play sound on receiving a new message
+  }
+});
+
+socket.on('user joined', (username) => {
+  addSystemMessage(`${username} joined!`);
+});
+
+socket.on('user left', (username) => {
+  addSystemMessage(`${username} left.`);
+});
+
+  </script>
+</body>
+</html>
